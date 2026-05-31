@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { BookOpen, Target, Clock, Zap, Plus, X } from 'lucide-react'
+import { BookOpen, Target, Clock, Zap, Plus, X, Library } from 'lucide-react'
 import { useStore } from '../stores/useStore'
 import type { LearnerProfile } from '../types'
+import { PshBrowser } from './PshBrowser'
 
 const LEVEL_OPTIONS = [
   { value: 'novice', label: 'Novice', desc: 'Starting from zero' },
@@ -37,6 +38,7 @@ interface Props { onGenerate: () => void }
 export function ProfileForm({ onGenerate }: Props) {
   const { topic, profile, setTopic, setProfile, isGenerating } = useStore()
   const [priorInput, setPriorInput] = useState('')
+  const [showPsh, setShowPsh] = useState(false)
   const addPriorField = () => {
     if (!priorInput.trim()) return
     setProfile({ priorFields: [...profile.priorFields, priorInput.trim()] })
@@ -49,12 +51,32 @@ export function ProfileForm({ onGenerate }: Props) {
   return (
     <div className="space-y-8">
       <div>
-        <label className="block text-xs font-mono uppercase tracking-widest text-amber-400 mb-3">Academic Topic</label>
+        <div className="flex items-center justify-between mb-3">
+          <label className="text-xs font-mono uppercase tracking-widest text-amber-400">Academic Topic</label>
+          <button
+            type="button"
+            onClick={() => setShowPsh(true)}
+            className="flex items-center gap-1.5 text-xs font-mono text-stone-500 hover:text-amber-400 transition-colors border border-stone-700 hover:border-stone-600 rounded-md px-2 py-1"
+          >
+            <Library size={11} />
+            Browse PSH Taxonomy
+          </button>
+        </div>
         <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && canGenerate && onGenerate()}
           placeholder="e.g. Measure Theory, Quantum Field Theory, Cognitive Science..."
           className="w-full bg-stone-900 border border-stone-700 rounded-lg px-4 py-3 text-stone-100 font-body placeholder-stone-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all text-lg" />
+        <p className="mt-1.5 text-xs text-stone-600 font-mono">Or browse 14,000+ academic terms from the PSH thesaurus →</p>
       </div>
+
+      <AnimatePresence>
+        {showPsh && (
+          <PshBrowser
+            onSelect={(label) => { setTopic(label); setShowPsh(false) }}
+            onClose={() => setShowPsh(false)}
+          />
+        )}
+      </AnimatePresence>
       <div>
         <label className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-stone-400 mb-3">
           <BookOpen size={12} /> Knowledge Level
