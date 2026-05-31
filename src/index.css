@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #1c1917; }
+::-webkit-scrollbar-thumb { background: #44403c; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #57534e; }
+.react-flow__controls-button { background: #1c1917 !important; border-color: #44403c !important; color: #a8a29e !important; }
+.react-flow__controls-button:hover { background: #292524 !important; }
