@@ -1,27 +1,33 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronRight, ChevronDown, Search, BookOpen } from 'lucide-react'
-import rawData from '../data/psh-taxonomy.json'
+import { X, ChevronRight, ChevronDown, Search, BookOpen, Loader2 } from 'lucide-react'
 
-// {id, l: label, b: broader-id-or-empty}
 interface Entry { id: string; l: string; b: string }
 
-const ALL: Entry[] = rawData as Entry[]
+let _cache: {
+  byId: Map<string, Entry>
+  childrenOf: Map<string, string[]>
+  TOP_IDS: string[]
+} | null = null
 
-// Build lookup maps once at module load
-const byId = new Map<string, Entry>(ALL.map((e) => [e.id, e]))
-const childrenOf = new Map<string, string[]>()
-for (const e of ALL) {
-  if (!childrenOf.has(e.b)) childrenOf.set(e.b, [])
-  childrenOf.get(e.b)!.push(e.id)
+async function loadTaxonomy() {
+  if (_cache) return _cache
+  const { default: rawData } = await import('../data/psh-taxonomy.json')
+  const ALL = rawData as Entry[]
+  const byId = new Map<string, Entry>(ALL.map((e) => [e.id, e]))
+  const childrenOf = new Map<string, string[]>()
+  for (const e of ALL) {
+    if (!childrenOf.has(e.b)) childrenOf.set(e.b, [])
+    childrenOf.get(e.b)!.push(e.id)
+  }
+  const TOP_IDS = (childrenOf.get('') ?? []).sort((a, b) =>
+    (byId.get(a)?.l ?? '').localeCompare(byId.get(b)?.l ?? '')
+  )
+  _cache = { byId, childrenOf, TOP_IDS }
+  return _cache
 }
 
-// Top-level = broader is empty string
-const TOP_IDS = (childrenOf.get('') ?? []).sort((a, b) =>
-  (byId.get(a)?.l ?? '').localeCompare(byId.get(b)?.l ?? '')
-)
-
-function getChildren(id: string): string[] {
+function getChildren(childrenOf: Map<string, string[]>, byId: Map<string, Entry>, id: string): string[] {
   return (childrenOf.get(id) ?? []).sort((a, b) =>
     (byId.get(a)?.l ?? '').localeCompare(byId.get(b)?.l ?? '')
   )
@@ -33,8 +39,17 @@ interface Props {
 }
 
 export function PshBrowser({ onSelect, onClose }: Props) {
+  const [taxonomy, setTaxonomy] = useState<typeof _cache>(null)
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    loadTaxonomy().then(setTaxonomy)
+  }, [])
+
+  const { byId, childrenOf, TOP_IDS } = taxonomy ?? {
+    byId: new Map(), childrenOf: new Map(), TOP_IDS: [],
+  }
 
   const toggle = useCallback((id: string) => {
     setExpanded((prev) => {
@@ -48,13 +63,12 @@ export function PshBrowser({ onSelect, onClose }: Props) {
 
   // When searching: collect all matching IDs and their ancestor chains
   const { matchIds, ancestorIds } = useMemo(() => {
-    if (!searchTerm) return { matchIds: new Set<string>(), ancestorIds: new Set<string>() }
+    if (!searchTerm || !taxonomy) return { matchIds: new Set<string>(), ancestorIds: new Set<string>() }
     const matches = new Set<string>()
     const ancestors = new Set<string>()
-    for (const e of ALL) {
+    for (const [, e] of byId) {
       if (e.l.toLowerCase().includes(searchTerm)) {
         matches.add(e.id)
-        // Walk up the parent chain so we can auto-expand
         let cur = e.b
         while (cur) {
           ancestors.add(cur)
@@ -63,7 +77,7 @@ export function PshBrowser({ onSelect, onClose }: Props) {
       }
     }
     return { matchIds: matches, ancestorIds: ancestors }
-  }, [searchTerm])
+  }, [searchTerm, taxonomy, byId])
 
   const isExpanded = (id: string) =>
     searchTerm ? ancestorIds.has(id) : expanded.has(id)
@@ -75,7 +89,7 @@ export function PshBrowser({ onSelect, onClose }: Props) {
     // During search, only show nodes that are matches or ancestors of matches
     if (searchTerm && !matchIds.has(id) && !ancestorIds.has(id)) return null
 
-    const children = getChildren(id)
+    const children = getChildren(childrenOf, byId, id)
     const hasChildren = children.length > 0
     const open = isExpanded(id)
     const isMatch = matchIds.has(id)
@@ -151,7 +165,7 @@ export function PshBrowser({ onSelect, onClose }: Props) {
           <BookOpen size={16} className="text-amber-400 shrink-0" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-stone-100 font-body">PSH Taxonomy Browser</div>
-            <div className="text-xs text-stone-500 font-mono">{ALL.length.toLocaleString()} terms · 44 domains · CC BY-SA 3.0</div>
+            <div className="text-xs text-stone-500 font-mono">{taxonomy ? `${byId.size.toLocaleString()} terms · 44 domains` : 'Loading…'} · CC BY-SA 3.0</div>
           </div>
           <button onClick={onClose} className="text-stone-600 hover:text-stone-300 transition-colors shrink-0">
             <X size={16} />
@@ -186,7 +200,13 @@ export function PshBrowser({ onSelect, onClose }: Props) {
         {/* Tree */}
         <div className="flex-1 overflow-y-auto py-2 px-3">
           <AnimatePresence mode="wait">
-            {displayIds.length === 0 ? (
+            {!taxonomy ? (
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className="flex items-center justify-center gap-2 py-16 text-stone-500 text-sm font-body">
+                <Loader2 size={16} className="animate-spin text-amber-500" />
+                Loading taxonomy…
+              </motion.div>
+            ) : displayIds.length === 0 ? (
               <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="text-center py-16 text-stone-600 text-sm font-body">
                 No terms match "{search}"
