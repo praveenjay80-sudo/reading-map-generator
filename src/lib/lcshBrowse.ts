@@ -4,7 +4,7 @@ const NARROWER_MADS = 'http://www.loc.gov/mads/rdf/v1#hasNarrowerAuthority'
 const PREF_LABEL = 'http://www.w3.org/2004/02/skos/core#prefLabel'
 const AUTH_LABEL = 'http://www.loc.gov/mads/rdf/v1#authoritativeLabel'
 
-// Strip either http:// or https:// base and any #concept fragment
+// Strip either http:// or https:// base and any #fragment
 const stripBase = (uri: string) =>
   uri
     .replace(/^https?:\/\/id\.loc\.gov\/authorities\/subjects\//, '')
@@ -27,8 +27,7 @@ function extractLabel(concept: Record<string, unknown>): string {
   ]
   const en = candidates.find((c) => c['@language'] === 'en')?.['@value']
   if (en) return en
-  // plain string label (search result format)
-  if (typeof concept['label'] === 'string') return concept['label']
+  if (typeof concept['label'] === 'string') return concept['label'] as string
   return ''
 }
 
@@ -39,10 +38,7 @@ function extractNarrower(concept: Record<string, unknown>): string[] {
   const ids: string[] = []
   for (const n of [...skos, ...mads]) {
     const id = stripBase(n['@id'] ?? '')
-    if (isValidId(id) && !seen.has(id)) {
-      seen.add(id)
-      ids.push(id)
-    }
+    if (isValidId(id) && !seen.has(id)) { seen.add(id); ids.push(id) }
   }
   return ids
 }
@@ -66,33 +62,30 @@ export async function fetchLcshNode(id: string): Promise<LcshBrowseNode> {
   return node
 }
 
-// Search-based children: queries LoC Solr for all concepts with this broader URI.
-// Used as primary source because the JSON-LD files truncate large narrower lists.
-async function fetchNarrowerBySearch(id: string): Promise<LcshBrowseNode[] | null> {
+// Parse N-Triples to get ALL narrower IDs — LoC .nt files are complete unlike JSON-LD
+async function fetchNarrowerFromNTriples(id: string): Promise<string[]> {
   try {
-    const broaderUri = `http://id.loc.gov/authorities/subjects/${id}`
-    const url = `${BASE}.json?q=broader%3A%22${encodeURIComponent(broaderUri)}%22&count=200`
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const data: unknown = await res.json()
-    // LoC returns a JSON-LD array for list queries
-    const list: Record<string, unknown>[] = Array.isArray(data) ? data : []
-    const nodes: LcshBrowseNode[] = []
-    for (const item of list) {
-      const rawId =
-        typeof item['@id'] === 'string'
-          ? stripBase(item['@id'])
-          : typeof item['uri'] === 'string'
-          ? stripBase(item['uri'] as string)
-          : ''
-      if (!isValidId(rawId)) continue
-      const label = extractLabel(item)
-      if (!label) continue
-      nodes.push({ id: rawId, label, narrowerIds: [] })
+    const res = await fetch(`${BASE}/${id}.nt`)
+    if (!res.ok) return []
+    const text = await res.text()
+    const ids: string[] = []
+    const seen = new Set<string>()
+    for (const line of text.split('\n')) {
+      if (!line.includes(id)) continue
+      if (!line.includes('narrower') && !line.includes('hasNarrowerAuthority')) continue
+      // N-Triple: <subject> <predicate> <object> .
+      const m = line.match(/<([^>]+)>\s+<[^>]+(?:narrower|hasNarrowerAuthority)[^>]*>\s+<([^>]+)>/)
+      if (!m) continue
+      if (!m[1].includes(`/${id}`)) continue // subject must be our concept
+      const narrowerId = stripBase(m[2])
+      if (isValidId(narrowerId) && !seen.has(narrowerId)) {
+        seen.add(narrowerId)
+        ids.push(narrowerId)
+      }
     }
-    return nodes.length > 0 ? nodes.sort((a, b) => a.label.localeCompare(b.label)) : null
+    return ids
   } catch {
-    return null
+    return []
   }
 }
 
@@ -111,11 +104,17 @@ async function pool<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]>
 }
 
 export async function fetchLcshChildren(id: string): Promise<LcshBrowseNode[]> {
-  // Try search-based approach first (handles broad subjects with many children)
-  const searchResults = await fetchNarrowerBySearch(id)
-  if (searchResults && searchResults.length > 0) return searchResults
+  // Strategy 1: N-Triples — complete narrower list, no truncation
+  const ntIds = await fetchNarrowerFromNTriples(id)
+  if (ntIds.length > 0) {
+    const tasks = ntIds.map((cid) => () => fetchLcshNode(cid).catch(() => null))
+    const results = await pool(tasks, 10)
+    return (results.filter(Boolean) as LcshBrowseNode[]).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    )
+  }
 
-  // Fall back to JSON-LD inline narrower list
+  // Strategy 2: JSON-LD inline narrower list (works for smaller concepts)
   const parent = await fetchLcshNode(id)
   if (parent.narrowerIds.length === 0) return []
   const tasks = parent.narrowerIds.map((cid) => () => fetchLcshNode(cid).catch(() => null))
