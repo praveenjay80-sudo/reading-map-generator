@@ -13,7 +13,7 @@ async function callClaude(apiKey: string, system: string, userMessage: string): 
     },
     body: JSON.stringify({
       model: 'claude-opus-4-5',
-      max_tokens: 8000,
+      max_tokens: 16000,
       system,
       messages: [{ role: 'user', content: userMessage }],
     }),
@@ -24,7 +24,10 @@ async function callClaude(apiKey: string, system: string, userMessage: string): 
     throw new Error(`Anthropic API error ${res.status}: ${text}`)
   }
 
-  const data = await res.json() as { content: { type: string; text: string }[] }
+  const data = await res.json() as { content: { type: string; text: string }[]; stop_reason?: string }
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error('The reading map was too large to generate completely. Try a narrower topic or set your goal to "survey".')
+  }
   return data.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
 }
 
