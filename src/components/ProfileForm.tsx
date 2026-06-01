@@ -66,7 +66,7 @@ export function ProfileForm({ onGenerate }: Props) {
           onKeyDown={(e) => e.key === 'Enter' && canGenerate && onGenerate()}
           placeholder="e.g. Measure Theory, Quantum Field Theory, Cognitive Science..."
           className="w-full bg-stone-900 border border-stone-700 rounded-lg px-4 py-3 text-stone-100 font-body placeholder-stone-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all text-lg" />
-        <p className="mt-1.5 text-xs text-stone-600 font-mono">Or browse 14,000+ academic terms from the PSH thesaurus →</p>
+        <p className="mt-1.5 text-xs text-stone-600 font-mono">Or search 350,000 LCSH headings / browse 14,000 PSH terms →</p>
       </div>
 
       <AnimatePresence>
