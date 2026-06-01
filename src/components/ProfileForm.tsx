@@ -56,10 +56,10 @@ export function ProfileForm({ onGenerate }: Props) {
           <button
             type="button"
             onClick={() => setShowPsh(true)}
-            className="flex items-center gap-1.5 text-xs font-mono text-stone-500 hover:text-amber-400 transition-colors border border-stone-700 hover:border-stone-600 rounded-md px-2 py-1"
+            className="flex items-center gap-1.5 text-xs font-mono text-amber-400 hover:text-amber-300 transition-colors border border-amber-500/40 hover:border-amber-400/70 hover:bg-amber-500/10 rounded-md px-3 py-1.5 font-semibold shadow-sm shadow-amber-500/10"
           >
-            <Library size={11} />
-            Browse PSH Taxonomy
+            <Library size={12} />
+            Browse LCSH &amp; PSH
           </button>
         </div>
         <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)}
