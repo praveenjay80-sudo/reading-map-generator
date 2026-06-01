@@ -3,6 +3,10 @@ const NARROWER = 'http://www.w3.org/2004/02/skos/core#narrower'
 const PREF_LABEL = 'http://www.w3.org/2004/02/skos/core#prefLabel'
 const AUTH_LABEL = 'http://www.loc.gov/mads/rdf/v1#authoritativeLabel'
 
+// LoC JSON-LD uses http:// URIs but we fetch over https://, so strip either
+const stripBase = (uri: string) =>
+  uri.replace(/^https?:\/\/id\.loc\.gov\/authorities\/subjects\//, '')
+
 export interface LcshBrowseNode {
   id: string
   label: string
@@ -24,7 +28,7 @@ function extractLabel(concept: Record<string, unknown>): string {
 function extractNarrower(concept: Record<string, unknown>): string[] {
   const arr = (concept[NARROWER] as { '@id'?: string }[] | undefined) ?? []
   return arr
-    .map((n) => (n['@id'] ?? '').replace(`${BASE}/`, ''))
+    .map((n) => stripBase(n['@id'] ?? ''))
     .filter((id) => /^sh\d+$/.test(id))
 }
 
@@ -79,12 +83,12 @@ export async function resolveLcshId(label: string): Promise<string | null> {
   // Prefer exact match without subdivision
   for (let i = 0; i < labels.length; i++) {
     if (labels[i].toLowerCase() === label.toLowerCase() && !labels[i].includes('--')) {
-      return uris[i].replace(`${BASE}/`, '')
+      return stripBase(uris[i])
     }
   }
   // Fall back to first non-subdivision result
   for (let i = 0; i < labels.length; i++) {
-    if (!labels[i].includes('--')) return uris[i].replace(`${BASE}/`, '')
+    if (!labels[i].includes('--')) return stripBase(uris[i])
   }
   return null
 }
