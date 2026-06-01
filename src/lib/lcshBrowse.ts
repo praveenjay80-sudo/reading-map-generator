@@ -1,9 +1,10 @@
 const BASE = 'https://id.loc.gov/authorities/subjects'
 const NARROWER = 'http://www.w3.org/2004/02/skos/core#narrower'
+const NARROWER_MADS = 'http://www.loc.gov/mads/rdf/v1#hasNarrowerAuthority'
 const PREF_LABEL = 'http://www.w3.org/2004/02/skos/core#prefLabel'
 const AUTH_LABEL = 'http://www.loc.gov/mads/rdf/v1#authoritativeLabel'
 
-// LoC JSON-LD uses http:// URIs but we fetch over https://, so strip either
+// LoC JSON-LD uses http:// URIs; strip either scheme
 const stripBase = (uri: string) =>
   uri.replace(/^https?:\/\/id\.loc\.gov\/authorities\/subjects\//, '')
 
@@ -15,7 +16,6 @@ export interface LcshBrowseNode {
 
 const cache = new Map<string, LcshBrowseNode>()
 
-// Extract English label from JSON-LD concept object
 function extractLabel(concept: Record<string, unknown>): string {
   const candidates = [
     ...((concept[PREF_LABEL] as { '@language'?: string; '@value'?: string }[] | undefined) ?? []),
@@ -24,12 +24,21 @@ function extractLabel(concept: Record<string, unknown>): string {
   return candidates.find((c) => c['@language'] === 'en')?.['@value'] ?? ''
 }
 
-// Extract narrower IDs from JSON-LD concept object
 function extractNarrower(concept: Record<string, unknown>): string[] {
-  const arr = (concept[NARROWER] as { '@id'?: string }[] | undefined) ?? []
-  return arr
-    .map((n) => stripBase(n['@id'] ?? ''))
-    .filter((id) => /^sh\d+$/.test(id))
+  // LoC exposes narrower via both skos:narrower and madsrdf:hasNarrowerAuthority
+  const skos = (concept[NARROWER] as { '@id'?: string }[] | undefined) ?? []
+  const mads = (concept[NARROWER_MADS] as { '@id'?: string }[] | undefined) ?? []
+  const seen = new Set<string>()
+  const ids: string[] = []
+  for (const n of [...skos, ...mads]) {
+    const id = stripBase(n['@id'] ?? '')
+    // Accept sh and sj prefixes (sj = children's subject headings)
+    if (/^s[hj]\d+$/.test(id) && !seen.has(id)) {
+      seen.add(id)
+      ids.push(id)
+    }
+  }
+  return ids
 }
 
 export async function fetchLcshNode(id: string): Promise<LcshBrowseNode> {
@@ -37,8 +46,11 @@ export async function fetchLcshNode(id: string): Promise<LcshBrowseNode> {
   const res = await fetch(`${BASE}/${id}.json`)
   if (!res.ok) throw new Error(`LCSH ${res.status} for ${id}`)
   const graph: Record<string, unknown>[] = await res.json()
-  const uri = `${BASE}/${id}`
-  const concept = graph.find((n) => n['@id'] === uri) ?? graph[0]
+  // LoC JSON-LD @id values use http://, so match by id suffix rather than full URI
+  const concept =
+    graph.find((n) => typeof n['@id'] === 'string' && (n['@id'] as string).endsWith(`/${id}`)) ??
+    graph.find((n) => Array.isArray(n['@type'])) ??
+    graph[0]
   const node: LcshBrowseNode = {
     id,
     label: extractLabel(concept),
